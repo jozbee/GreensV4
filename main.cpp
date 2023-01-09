@@ -13,18 +13,6 @@ See greens.cpp for description of changes.
 #include <math.h>
 #include "nrutil.h"
 
-#if defined(__linux__)
-// Requires c++17 support, should be included in all current linux releases
-#include <experimental/filesystem> 
-namespace fs = std::experimental::filesystem::v1;
-#elif defined(__APPLE__)
-// Requires removal of the -lstdc++fs flag from makefile
-#include <filesystem>
-namespace fs = std::filesystem;
-#elif defined(_WIN32)    //Windows version
-#include <Windows.h>
-#endif
-
 void input(void);
 void analyzenet(void);
 void picturenetwork(float *nodvar, float *segvar, const char fname[]);
@@ -71,33 +59,6 @@ int main(int argc, char *argv[])
 	char fname[80];
 	FILE *ofp;
 
-	// Create current subdirectory if doesn't exist; copy .dat files there
-	// Updated May 2019 for cross-platform support
-#if defined(__unix__)
-	if (!fs::exists("Current")) fs::create_directory("Current");
-
-	fs::copy_file("ContourParams.dat", fs::path("Current/ContourParams.dat"), fs::copy_options::overwrite_existing);
-	fs::copy_file("SoluteParams.dat", fs::path("Current/SoluteParams.dat"), fs::copy_options::overwrite_existing);
-	fs::copy_file("Network.dat", fs::path("Current/Network.dat"), fs::copy_options::overwrite_existing);
-	fs::copy_file("IntravascRes.dat", fs::path("Current/IntravascRes.dat"), fs::copy_options::overwrite_existing);
-	if (fs::exists("Varyparams.dat"))
-		fs::copy_file("VaryParams.dat", fs::path("Current/VaryParams.dat"), fs::copy_options::overwrite_existing);
-	fs::copy_file("tissrate.cpp.dat", fs::path("Current/tissrate.cpp.dat"), fs::copy_options::overwrite_existing);
-#elif defined(_WIN32) 			//Windows version
-	bool NoOverwrite = false;
-	DWORD ftyp = GetFileAttributesA("Current\\");
-	if (ftyp != FILE_ATTRIBUTE_DIRECTORY) system("mkdir Current");		//Create a Current subdirectory if it does not already exist.
-	CopyFile("BCparams.dat", "Current\\BCparams.dat", NoOverwrite); //copy input data files to "Current" directory
-	CopyFile("ContourParams.dat.dat", "Current\\ContourParams.dat", NoOverwrite);
-	CopyFile("SoluteParamsParams.dat.dat", "Current\\SoluteParamsParams.dat", NoOverwrite);
-	CopyFile("Network.dat", "Current\\Network.dat", NoOverwrite);
-	CopyFile("IntravascRes.dat", "Current\\IntravascRes.dat", NoOverwrite);
-	CopyFile("tissrate.cpp.dat", "Current\\tissrate.cpp.dat", NoOverwrite);
-	ftyp = GetFileAttributes("Varyparams.dat");
-	if (ftyp != 0xFFFFFFFF) CopyFile("Varyparams.dat", "Current\\Varyparams.dat", NoOverwrite);	//this file may not exist!
-	ftyp = GetFileAttributesA("Varyparams.dat");
-#endif
-
 	input();
 
 	is2d = 0; //set to 1 for 2d version, 0 otherwise
@@ -113,102 +74,15 @@ int main(int argc, char *argv[])
 
 	for (iseg = 1; iseg <= nseg; iseg++) segvar[iseg] = segname[iseg];
 	for (inod = 1; inod <= nnod; inod++) nodvar[inod] = nodname[inod];
-	picturenetwork(nodvar, segvar, "Current/NetNodesSegs.ps");
 
 	for (iseg = 1; iseg <= nseg; iseg++) {
 		if (segtyp[iseg] == 4 || segtyp[iseg] == 5) segvar[iseg] = log(fabs(qdata[iseg]));
 		else segvar[iseg] = 0.;
 	}
-	cmgui(segvar);
-
-	ofp = fopen("Current/summary.out", "w");
-	//print headings for summary output file
-	fprintf(ofp, "imain kmain ");
-	for (j = 1; j <= nvaryparams; j++) {
-		switch (ivaryparams[j][1]) {
-		case 1:
-			fprintf(ofp, "   q0fac    ");
-			break;
-		case 2:
-			fprintf(ofp, " solutefac[%i]", ivaryparams[j][2]);
-			break;
-		case 3:
-			fprintf(ofp, " diff[%i]     ", ivaryparams[j][2]);
-			break;
-		case 4:
-			fprintf(ofp, " intravascfac[%i]", ivaryparams[j][2]);
-			break;
-		case 5:
-			fprintf(ofp, " tissparam[%i][%i]", ivaryparams[j][2], ivaryparams[j][3]);
-			break;
-		case 6:
-			fprintf(ofp, "   p50     ");
-			break;
-		}
-	}
-	for (isp = 1; isp <= nsp; isp++) fprintf(ofp, "  pmean[%i]  ", isp);
-	for (j = 1; j <= npostgreensout; j++) fprintf(ofp, " postgreens[%i]", j);
-	fprintf(ofp, "\n");
-	fclose(ofp);
-
-	//The following loop allows running a series of cases with varying parameters
-	for (imain = 1; imain <= nruns; imain++) {
-		for (j = 1; j <= nvaryparams; j++) {
-			switch (ivaryparams[j][1]) {
-			case 1:
-				q0fac = paramvalue[imain][j];
-				break;
-			case 2:
-				isp = ivaryparams[j][2];
-				if (isp <= nsp) solutefac[isp] = paramvalue[imain][j];
-				break;
-			case 3:
-				isp = ivaryparams[j][2];
-				if (isp <= nsp) diff[isp] = paramvalue[imain][j];
-				break;
-			case 4:
-				isp = ivaryparams[j][2];
-				if (isp <= nsp) intravascfac[isp] = paramvalue[imain][j];
-				break;
-			case 5:
-				isp = ivaryparams[j][3];
-				if (isp <= nsp) tissparam[ivaryparams[j][2]][isp] = paramvalue[imain][j];
-				break;
-			case 6:
-				p50 = paramvalue[imain][j];
-				break;
-			}
-		}
 
 		//*************************************
 		greens();		//run greens
 		//*************************************
 
-		ofp = fopen("Current/summary.out", "a");
-		fprintf(ofp, "%4i  %4i  ", imain, kmain);
-		for (j = 1; j <= nvaryparams; j++) fprintf(ofp, "%12f ", paramvalue[imain][j]);
-		for (isp = 1; isp <= nsp; isp++) fprintf(ofp, "%12f ", pmeant[isp]);
-
-		if (npostgreensparams) postgreens();
-
-		if (npostgreensout) for (j = 1; j <= npostgreensout; j++) fprintf(ofp, "%12f ", postgreensout[j]);
-		fprintf(ofp, "\n");
-		fclose(ofp);
-
-		//for (iseg = 1; iseg <= nseg; iseg++) segvar[iseg] = pvseg[iseg][1];
-		for (iseg = 1; iseg <= nseg; iseg++) segvar[iseg] = gamma1[iseg][1];	//temparary code for KTO2 paper
-		for (inod = 1; inod <= nnod; inod++) nodvar[inod] = nodname[inod];
-
-		sprintf(fname, "Current/NetNodesOxygen%03i.ps", imain);
-		picturenetwork(nodvar, segvar, fname);
-
-		cmgui(segvar);
-
-		sprintf(fname, "Current/Contour%03i.ps", imain);
-		contour(fname);
-
-		sprintf(fname, "Current/Histogram%03i.out", imain);
-		histogram(fname);
-	}
 	return 0;
 }

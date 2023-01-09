@@ -96,6 +96,10 @@ void ludcmp(double **a, int n, int *indx, double *d);
 void lubksb(double **a, int n, int *indx, double *b);
 double bicgstab(double **a, double *b, double *x, int n, double eps, int itmax);
 
+void print_vector_isp(float **a, int n, const char *msg, int col);
+void print_vector(float *a, int n, const char *msg);
+void print_matrix(float **a, int n, const char *msg);
+
 void greens(void)
 {
 	extern int nmaxvessel, nmaxtissue, nmax, g0method, linmethod, kmain, imain;
@@ -197,19 +201,7 @@ void greens(void)
 		tlengthdiam += lseg[iseg] * diam[iseg];
 	}
 	den = sqrt(vdom / tlength);
-	if (greensverbose) {
-		printf("Average distance from tissue node to the nearest vessel = %f\n", dtave);
-		printf("Vessel length) = %f\n", tlength);
-		printf("Sqrt(Tissue Volume/vessel length) = %f\n", den);
-		printf("Capillary density = %8.1f /mm2\n", tlength / vdom * 1.e6);
-		printf("Total inflow to network = %f nl/min (for flow values in network.dat)\n", totalq);
-		printf("Perfusion = %f cm3/cm3/min (uncorrected for path length effect)\n", totalq*q0fac / vdom * 1.e6);
-		pathlength = 0.;
-		if (q0fac > 0.) for (iseg = 1; iseg <= nseg; iseg++) if (segtyp[iseg] == 4 || segtyp[iseg] == 5)
-			pathlength += fabs(q[iseg])*lseg[iseg] / totalq / q0fac;
-		printf("Flow-weighted path length = %f micron\n", pathlength);
-		printf("Length-weighted mean diameter = %f micron\n", tlengthdiam/tlength);
-	}
+
 	//Calculate intravascular or wall transport resistance.  Zero unless specified in intravascfac.dat.
 	//If not oxygen, assume value from data is 1/(wall permeability in um/s)
 	for (isp = 1; isp <= nsp; isp++) {
@@ -274,25 +266,16 @@ void greens(void)
 	for (isp = 1; isp <= nsp; isp++) if (oxygen[isp] == 1) qhdcrit = lowflowcrit * tissparam[1][isp];
 	for (iseg = 1; iseg <= nseg; iseg++) if (segtyp[iseg] == 4 || segtyp[iseg] == 5) {
 		lowflow[iseg] = 0;
-		if (qq[iseg] * (hd[iseg] + 0.01) < qhdcrit) lowflow[iseg] = 1;//Added 0.01 to allow for high flow, zero hematocrit channels
+//		if (qq[iseg] * (hd[iseg] + 0.01) < qhdcrit) lowflow[iseg] = 1;//Added 0.01 to allow for high flow, zero hematocrit channels
 	}
 	initgreens();
 	putrank();
-	//	for(isp=1; isp<=nsp; isp++){//for testing purposes only
-	//		convect(isp);
-	//		testconvect(isp);	
-	//	}
 
-	//create log file
-	ofp1 = fopen("Current/GreensLog.txt", "w");
-	fprintf(ofp1, "GreensLog.txt\n");
-	fclose(ofp1);
 	tstart = clock();
 	//********************** start of main loop *****************************
-	for (kmain = 1; kmain <= nmax; kmain++) {
+    kmain = 1;
+
 		tstart1 = clock();
-		if (greensverbose) printf("\n----- kmain = %i -----\n", kmain);
-		else printf(" %i", kmain);
 		for (isp = 1; isp <= nsp; isp++) {
 			for (itp = 1; itp <= nnt; itp++)	ptprev[itp][isp] = pt[itp][isp];
 			if (permsolute[isp] == 1) for (i = 1; i <= nnv; i++) pvprev[i][isp] = pv[i][isp];
@@ -320,8 +303,10 @@ void greens(void)
 				for (isp = 1; isp <= nsp; isp++) if (permsolute[isp] == 1) pvt[i][isp] += gvt / diff[isp] * qt[itp][isp];//permsolute
 			}
 		}
+
+        kvessel = 1;
+
 		//compute blood solute levels and PO2
-		for (kvessel = 1; kvessel <= nmaxvessel; kvessel++) {
 			convflagv = 1;
 			for (isp = 1; isp <= nsp; isp++) {
 				qvsum[isp] = 0.;
@@ -481,7 +466,7 @@ void greens(void)
 					errvesselcount[isp] = 0;
 					for (i = 1; i <= nnv; i++) {
 						dif = qv[i][isp] - qvprev[i][isp];
-						//If qv is large, use relative rather than absolute error 
+						//If qv is large, use relative rather than absolute error
 						if (qv[i][isp] != 0.) dif = dif * FMIN(1., epsvessel[isp] / errfac / fabs(qv[i][isp]));
 						if (fabs(dif) >= errvessel[isp]) {
 							imaxerrvessel[isp] = mainseg[i];
@@ -489,19 +474,23 @@ void greens(void)
 						}
 						if (fabs(dif) > epsvessel[isp]) errvesselcount[isp]++;
 					}
-					if (greensverbose) printf("Solute %i: qtsum = %f, qvsum = %f\n", isp, qtsum[isp], qvsum[isp]);
-					if (greensverbose) printf("Solute %i: kvessel = %i, errvessel_q = %f, imaxerr = %i, g0 = %f\n",
-						isp, kvessel, errvessel[isp], imaxerrvessel[isp], g0[isp]);
+
 					if (errvesselcount[isp] > 0) convflagv = 0;
 				}
 			}
-			if (convflagv) goto vesselconv;
-		}
-		for (isp = 1; isp <= nsp; isp++) if (errvesselcount[isp] > 0)
-			if (greensverbose) printf("*** Warning: solute %i, %i vessel source strengths not converged\n",
-				isp, errvesselcount[isp]);
-	vesselconv:;
-		//********************** end of vessel loop *****************************	
+
+    // print matx, rhsl, al, qvprev, qv, cv, pv, dcdp
+    printf("\nvessel vals\n\n");
+    print_vector_isp(qvprev, nnv, "qvprev", 1);
+    print_vector_isp(qv, nnv, "qv", 1);
+    print_vector_isp(cv, nnv, "cv", 1);
+    print_vector_isp(pv, nnv, "pv", 1);
+    print_vector_isp(dcdp, nnv, "dcdp", 1);
+    print_vector(reinterpret_cast<float *>(rhsl), nnv + 1, "rhsl");
+    print_matrix(al, nnv, "al");
+    print_matrix(reinterpret_cast<float **>(mat), nnv + 1, "mat");
+
+		//********************** end of vessel loop *****************************
 		//********************** start of tissue loop *****************************
 		//Compute tissue source strengths iteratively by successive relaxation: updated qt values are immediately used.
 		//Continually scales up qv values so that their sum equals updated sum of qt values.
@@ -522,7 +511,9 @@ void greens(void)
 			}
 		}
 		for (isp = 1; isp <= nsp; isp++) qvfac[isp] = 1.;
-		for (ktissue = 1; ktissue <= nmaxtissue; ktissue++) {	//Scale all av, qvsum and ptv values so that qvsum = qtsum
+
+		ktissue = 1;
+
 			for (isp = 1; isp <= nsp; isp++) if (permsolute[isp] == 1 && g0method == 1) {
 				qvfac[isp] = -qtsum[isp] / qvsum[isp];
 				if (fabs(qvfac[isp]) > 2.) qvfac[isp] = 1.;  //avoid extreme values
@@ -574,249 +565,127 @@ void greens(void)
 					if (fabs(dif) > epstissue[isp]) errtissuecount[isp]++;
 				}
 			}
-			for (isp = 1; isp <= nsp; isp++) {
-				if(greensverbose) printf("Solute %i: qtsum = %f, qvsum = %f\n",isp,qtsum[isp],qvsum[isp]*qvfac[isp]);
-				if (greensverbose) printf("Solute %i: ktissue = %i, errtissue_q = %f, imaxerr = %i, g0 = %f\n",
-					isp, ktissue, errtissue[isp], imaxerrtissue[isp], g0[isp]);
-				if (errtissuecount[isp] > 0) convflagt = 0;
-			}
-			if (kmain > 1 && convflagt) goto tissueconv;  //force full number of iterations when kmain = 1.
-		}
-		for (isp = 1; isp <= nsp; isp++) if (errtissuecount[isp] > 0)
-			if (greensverbose) printf("*** Warning: solute %i, %i tissue source strengths not converged\n", isp, errtissuecount[isp]);
-	tissueconv:;
 
-		ofp1 = fopen("Current/GreensLog.txt", "a");		//Print log file
-		kvessel = IMIN(kvessel, nmaxvessel);
-		ktissue = IMIN(ktissue, nmaxtissue);
-		fprintf(ofp1, "\n----- kmain = %i, kvessel = %i, ktissue = %i -----\n", kmain, kvessel, ktissue);
-		for (isp = 1; isp <= nsp; isp++) {
-			if (diffsolute[isp] == 1) fprintf(ofp1, "Solute %i: qtsum = %f, qvsum = %f, g0 = %f\n",
-				isp, qtsum[isp], qvsum[isp] * qvfac[isp], g0[isp]);
-			if (permsolute[isp] == 1) fprintf(ofp1, "Solute %i: errvessel_q = %f, imaxerr = %i\n",
-				isp, errvessel[isp], segname[imaxerrvessel[isp]]);
-			if (diffsolute[isp] == 1) fprintf(ofp1, "Solute %i: errtissue_q = %f, imaxerr = %i\n",
-				isp, errtissue[isp], imaxerrtissue[isp]);
-		}
-		fclose(ofp1);
-		//********************** end of tissue loop *****************************
-		//Update g0.  If permsolute[isp] != 1, always use method 2.
-		//Method 2 is based on derivative wrt g0, automatic estimation of g0fac
-		for (isp = 1; isp <= nsp; isp++) g0facnew[isp] = 0.;
-		for (itp = 1; itp <= nnt; itp++) {
-			for (isp = 1; isp <= nsp; isp++) ptpt[isp] = pt[itp][isp];
-			tissrate(nsp, ptpt, mtiss, mptiss);
-			ix = tisspoints[1][itp];
-			iy = tisspoints[2][itp];
-			iz = tisspoints[3][itp];
-			for (jtp = 1; jtp <= nnt; jtp++) {
-				jx = tisspoints[1][jtp];
-				jy = tisspoints[2][jtp];
-				jz = tisspoints[3][jtp];
-				ixdiff = abs(ix - jx) + 1;
-				iydiff = abs(iy - jy) + 1;
-				izdiff = abs(iz - jz) + 1;
-				for (isp = 1; isp <= nsp; isp++) if (diffsolute[isp] == 1) g0facnew[isp] += dtt[ixdiff][iydiff][izdiff] / diff[isp] * mptiss[isp] * vol;
-			}
-		}
-		for (isp = 1; isp <= nsp; isp++) if (diffsolute[isp] == 1 && (g0method == 2 || permsolute[isp] == 0)) {
-			g0facnew[isp] = 1. / (1. - g0facnew[isp] / nnt);
-			dqsumdg0 = FMIN(dqvsumdg0[isp], 0.) + FMIN(dqtsumdg0[isp], 0.)*g0facnew[isp];
-			if (fabs(dqsumdg0) > 1.e-6) {
-				dif = (qvsum[isp] + qtsum[isp]) / dqsumdg0 * g0fac[isp];//This g0fac should normally be 1.0.
-				g0[isp] -= dif;
-			}
-		}
-		convflag = 1;		//Convergence based on changes in pv, pt and g0.  Express relative to eps[isp].
-		if (greensverbose) printf("\n");
-		for (isp = 1; isp <= nsp; isp++) {
-			err = 0.;
-			imaxerr = 0;
-			if (permsolute[isp] == 1) for (i = 1; i <= nnv; i++) {
-				dif = fabs(pv[i][isp] - pvprev[i][isp]) / eps[isp];
-				if (dif > err) {
-					imaxerr = mainseg[i];
-					err = dif;
-				}
-			}
-			errvessel[isp] = err;
-			imaxerrvessel[isp] = imaxerr;
-			err = 0.;
-			imaxerr = 0;
-			for (itp = 1; itp <= nnt; itp++) {
-				dif = fabs(pt[itp][isp] - ptprev[itp][isp]) / eps[isp];
-				if (dif > err) {
-					imaxerr = itp;
-					err = dif;
-				}
-			}
-			errtissue[isp] = err;
-			imaxerrtissue[isp] = imaxerr;
-			if (errvessel[isp] > err) {
-				imaxerr = imaxerrvessel[isp];
-				err = errvessel[isp];
-			}
-			else imaxerr = -imaxerr;
-			dif = fabs(g0[isp] - g0old[isp]) / eps[isp];
-			if (dif > err) {
-				imaxerr = 0;
-				err = dif;
-			}
-			if (greensverbose) printf("Solute %i: err = %f, imaxerr = %i (- for tissue point)\n", isp, err, imaxerr);
-			if (greensverbose && imaxerr > 0) if (lowflow[imaxerr]) printf("Solute %i: max error is at a low-flow segment\n", isp);
-			if (err > 1.) convflag = 0;
-		}
-		ofp1 = fopen("Current/GreensLog.txt", "a");		//Print log file
-		for (isp = 1; isp <= nsp; isp++) {
-			if (permsolute[isp] == 1) fprintf(ofp1, "Solute %i: errvessel_p = %f, imaxerr = %i\n",
-				isp, errvessel[isp], segname[imaxerrvessel[isp]]);
-			fprintf(ofp1, "Solute %i: errtissue_p = %f, imaxerr = %i\n", isp, errtissue[isp], imaxerrtissue[isp]);
-		}
-		fclose(ofp1);
-		tfinish1 = clock();
-		duration = (float)(tfinish1 - tstart1) / CLOCKS_PER_SEC;
-		if (greensverbose) printf("\nkmain = %i, %2.3f seconds for step\n", kmain, duration);
-		if (convflag && convflagv && convflagt) goto mainconv;
-	}
-	printf("\n*** Warning: tissue or vessel solute levels not converged");
-mainconv:;
+    // print ptprev, pt, qt
+    printf("\ntissue vals\n\n");
+    print_vector_isp(ptprev, nnt, "ptprev", 1);
+    print_vector_isp(pt, nnt, "pt", 1);
+    print_vector_isp(qt, nnt, "qt", 1);
+
+    printf("\ngood end\n\n");
+
 	//********************** end of main loop *****************************
 	tfinish = clock();
 	duration = (float)(tfinish - tstart) / CLOCKS_PER_SEC;
 	printf("\n%i iterations, %2.1f seconds for main loop\n", kmain, duration);
-	ofp1 = fopen("Current/GreensLog.txt", "a");
-	fprintf(ofp1, "\n%i iterations, %2.1f seconds for main loop\n", kmain, duration);
-	fclose(ofp1);
 
-	for (isp = 1; isp <= nsp; isp++) if (permsolute[isp] == 1 && g0method == 1) {
-		qvsum[isp] *= qvfac[isp];		//Scale all qv values so that qvsum = qtsum
-		for (i = 1; i <= nnv; i++) qv[i][isp] *= qvfac[isp];
-	}
+}
 
-	sprintf(fname, "Current/GreensRes%03i.out", imain);		//general output file
-	ofp = fopen(fname, "w");
-	fprintf(ofp, "%i %i %i %i %i %i\n", nnv, nseg, mxx, myy, mzz, nnt);
-	fprintf(ofp, "Scaling factor for flows q0fac = %f\n", q0fac);
-	for (isp = 1; isp <= nsp; isp++) fprintf(ofp, "g0[%i] = %f\n", isp, g0[isp]);
-	fprintf(ofp, "\n");
-	for (isp = 1; isp <= nsp; isp++) if (diffsolute[isp] == 1) {	//extravascular solute levels
-		fprintf(ofp, "\nSolute %i\n", isp);
-		fprintf(ofp, "Segment");
-		if (permsolute[isp] == 1) fprintf(ofp, "Efflux Pvessel Ptissue Cvessel");
-		fprintf(ofp, "\n");
-		for (i = 1; i <= nnv; i++) {
-			pev[i][isp] = pvt[i][isp];
-			if (g0method == 1 && permsolute[isp] == 1) pev[i][isp] += g0[isp];
-			if (permsolute[isp] == 1) for (j = 1; j <= nnv; j++) pev[i][isp] += gvv[i][j] * qv[j][isp] / diff[isp];
-		}
-		for (iseg = 1; iseg <= nseg; iseg++) if (segtyp[iseg] == 4 || segtyp[iseg] == 5) {
-			qvseg[iseg][isp] = 0.;
-			pevseg[iseg][isp] = 0.;
-			pvseg[iseg][isp] = 0.;
-		}
-		for (i = 1; i <= nnv; i++) {
-			iseg = mainseg[i];
-			if (permsolute[isp] == 1) fprintf(ofp, "%4i %4i %10.4f %10.4f %10.4f %10.4f\n",
-				i, iseg, qv[i][isp], pv[i][isp], pev[i][isp], cv[i][isp]);
-			qvseg[iseg][isp] += qv[i][isp];
-			pevseg[iseg][isp] += pev[i][isp] / nspoint[iseg];
-			pvseg[iseg][isp] += pv[i][isp] / nspoint[iseg];
-		}
-		fprintf(ofp, "Solute %i: qtsum = %f, qvsum = %f\n", isp, qtsum[isp], qvsum[isp]);
-	}
-	for (isp = 1; isp <= nsp; isp++) if (permsolute[isp] == 1) {
-		fprintf(ofp, "Solute %i: segment length pvseg pevseg qvseg gamma\n", isp);
-		for (iseg = 1; iseg <= nseg; iseg++) if (segtyp[iseg] == 4 || segtyp[iseg] == 5)
-			fprintf(ofp, "%4i %10.4f %10.4f %10.4f %10.4f %10.4f\n",
-				segname[iseg], lseg[iseg], pvseg[iseg][isp], pevseg[iseg][isp], qvseg[iseg][isp], gamma1[iseg][isp]);
-	}
-	fclose(ofp);
+/* Prints an array, interpreted as a vector.
+ *
+ * The printed syntax should closely mimic that of a numpy array.
+ *
+ * Parameters
+ * ----------
+ * a : array_like
+ *     Pointer to a double array.
+ * n : int
+ *     Integer that gives the size of a.
+ * msg : str
+ *     Message to display before printing vector.
+ * col : int
+ *     Column (isp) index.
+ *
+ * Returns
+ * -------
+ * None
+ */
+void print_vector_isp(float **a, int n, const char *msg, int col)
+{
+    printf("\n%s\n\n", msg);
+    printf("[");
+    for (size_t i = 1; i < n; i++)
+    {
+        printf("%f, ", a[i][col]);
+    }
+    printf("%f]\n\n", a[n][col]);
+    fflush(stdout);
+}
 
-	sprintf(fname, "Current/VesselLevels%03i.out", imain);	//Vessel levels for all vessel points
-	ofp = fopen(fname, "w");
-	fprintf(ofp, "Vessel levels\n");
-	for (isp = 1; isp <= nsp; isp++) if (permsolute[isp]) {
-		pmax[isp] = -1.e8;
-		pmeanv[isp] = 0.;
-		psdv[isp] = 0.;
-		pmin[isp] = 1.e8;
-		for (i = 1; i <= nnv; i++) {
-			pmeanv[isp] += pv[i][isp];
-			psdv[isp] += SQR(pv[i][isp]);
-			pmax[isp] = FMAX(pv[i][isp], pmax[isp]);
-			pmin[isp] = FMIN(pv[i][isp], pmin[isp]);
-		}
-		pmeanv[isp] = pmeanv[isp]/nnv;
-		psdv[isp] = sqrt(psdv[isp]/nnv - SQR(pmeanv[isp]));
-		fprintf(ofp, "   Solute %i  ", isp);
-	}
-	fprintf(ofp,"\npmeanv\n");
-	for(isp=1; isp<=nsp; isp++) if(permsolute[isp])	fprintf(ofp,"%12f ", pmeanv[isp]);
-	fprintf(ofp,"\npsdv\n");
-	for(isp=1; isp<=nsp; isp++) if(permsolute[isp])	fprintf(ofp,"%12f ", psdv[isp]);
-	fprintf(ofp, "\npmin\n");
-	for (isp = 1; isp <= nsp; isp++) if (permsolute[isp]) fprintf(ofp, "%12f ", pmin[isp]);
-	fprintf(ofp, "\npmax\n");
-	for (isp = 1; isp <= nsp; isp++) if (permsolute[isp]) fprintf(ofp, "%12f ", pmax[isp]);
-	fprintf(ofp, "\nvalues\n");
-	for (i = 1; i <= nnv; i++) {
-		for (isp = 1; isp <= nsp; isp++) if (permsolute[isp]) fprintf(ofp, "%12f ", pv[i][isp]);
-		fprintf(ofp, "\n");
-	}
-	fclose(ofp);
 
-	sprintf(fname, "Current/VesselSources%03i.out", imain);	//Vessel source strengths for all vessel points
-	ofp = fopen(fname, "w");
-	fprintf(ofp, "Vessel sources\n");
-	for (isp = 1; isp <= nsp; isp++) if (permsolute[isp]) fprintf(ofp, "   Solute %i  ", isp);
-	fprintf(ofp, "\n");
-	for (i = 1; i <= nnv; i++) {
-		for (isp = 1; isp <= nsp; isp++) if (permsolute[isp]) fprintf(ofp, "%12f ", qv[i][isp]);
-		fprintf(ofp, "\n");
-	}
-	fclose(ofp);
+/* Prints an array, interpreted as a vector.
+ *
+ * The printed syntax should closely mimic that of a numpy array.
+ *
+ * Parameters
+ * ----------
+ * a : array_like
+ *     Pointer to a double array.
+ * n : int
+ *     Integer that gives the size of a.
+ * msg : str
+ *     Message to display before printing vector.
+ *
+ * Returns
+ * -------
+ * None
+ */
+void print_vector(float *a, int n, const char *msg)
+{
+    printf("\n%s\n\n", msg);
+    printf("[");
+    for (size_t i = 1; i < n; i++)
+    {
+        printf("%f, ", a[i]);
+    }
+    printf("%f]\n\n", a[n]);
+    fflush(stdout);
+}
 
-	sprintf(fname, "Current/TissueLevels%03i.out", imain);		//Tissue levels for all tissue points
-	ofp = fopen(fname, "w");
-	fprintf(ofp, "Tissue levels\n");
-	for (isp = 1; isp <= nsp; isp++) {
-		pmax[isp] = -1.e8;
-		pmeant[isp] = 0.;
-		psdt[isp] = 0.;
-		pmin[isp] = 1.e8;
-		for (itp = 1; itp <= nnt; itp++) {
-			pmeant[isp] += pt[itp][isp];
-			psdt[isp] += SQR(pt[itp][isp]);
-			pmax[isp] = FMAX(pt[itp][isp], pmax[isp]);
-			pmin[isp] = FMIN(pt[itp][isp], pmin[isp]);
-		}
-		pmeant[isp] = pmeant[isp]/nnt;
-		psdt[isp] = sqrt(psdt[isp]/nnt - SQR(pmeant[isp]));
-		fprintf(ofp, "   Solute %i  ", isp);
-	}
-	fprintf(ofp,"\npmeant\n");
-	for(isp=1; isp<=nsp; isp++)	fprintf(ofp,"%12f ", pmeant[isp]);
-	fprintf(ofp,"\npsdt\n");
-	for(isp=1; isp<=nsp; isp++)	fprintf(ofp,"%12f ", psdt[isp]);
-	fprintf(ofp, "\npmin\n");
-	for (isp = 1; isp <= nsp; isp++)	fprintf(ofp, "%12f ", pmin[isp]);
-	fprintf(ofp, "\npmax\n");
-	for (isp = 1; isp <= nsp; isp++) fprintf(ofp, "%12f ", pmax[isp]);
-	fprintf(ofp, "\nvalues\n");
-	for (itp = 1; itp <= nnt; itp++) {
-		for (isp = 1; isp <= nsp; isp++) fprintf(ofp, "%12f ", pt[itp][isp]);
-		fprintf(ofp, "\n");
-	}
-	fclose(ofp);
 
-	sprintf(fname, "Current/TissueSources%03i.out", imain);		//Tissue source strengths for all tissue points
-	ofp = fopen(fname, "w");
-	fprintf(ofp, "Tissue sources\n");
-	for (isp = 1; isp <= nsp; isp++) fprintf(ofp, "   Solute %i  ", isp);
-	fprintf(ofp, "\n");
-	for (itp = 1; itp <= nnt; itp++) {
-		for (isp = 1; isp <= nsp; isp++) fprintf(ofp, "%12f ", qt[itp][isp]);
-		fprintf(ofp, "\n");
-	}
-	fclose(ofp);
+/* Prints an array, interpreted as a square matrix.
+ *
+ * The printed syntax should closely mimic that of a numpy array.
+ *
+ * Parameters
+ * ----------
+ * a : array_like
+ *     Pointer to a double array.
+ * n : int
+ *     Integer that gives the size of a.
+ * msg : str
+ *     Message to display before printing vector.
+ *
+ * Returns
+ * -------
+ * None
+ */
+void print_matrix(float **a, int n, const char *msg)
+{
+    printf("\n%s\n\n", msg);
+    for (size_t i = 1; i < n; i++)
+    {
+        if (i == 1)
+        {
+            printf("[[");
+        }
+        else
+        {
+            printf(" [");
+        }
+
+        for (size_t j = 1; j < n; j++)
+        {
+            if (j != n - 1)
+            {
+                printf("%f, ", a[i][j]);
+            }
+            else
+            {
+                printf("%f]\n", a[i][j]);
+            }
+        }
+    }
+    printf("]\n\n");
+    fflush(stdout);
 }

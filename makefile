@@ -18,7 +18,7 @@ OBJS=$(OBJSC:.cpp=.o)
 all: $(SOURCES) $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CC) $(LFLAGS) $(OBJS) -o $(TARGET) -lstdc++fs
+	$(CC) $(LFLAGS) $(OBJS) -o $(TARGET)
 
 purge: clean
 	rm -f $(TARGET)

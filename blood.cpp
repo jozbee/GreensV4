@@ -26,17 +26,20 @@ void blood(float c, float h, float *p, float *pp)
 	float clow, chigh, pphigh;
 
 	if (h < 1.e-6) {
+        printf("bad h\n\n");
 		*p = c / alphab;
 		*pp = alphab;
 		return;
 	}
 	if (c < 0.) {	//changed for better behavior in severe hypoxia
+        printf("bad c\n\n");
 		*p = c / alphab;
 		*pp = alphab;
 		return;
 	}
 	clow = clowfac * h + alphab * plow;
 	if (c < clow) {
+        printf("bad clow\n\n");
 		*p = c * plow / clow;
 		*pp = clow / plow;
 		return;
@@ -58,6 +61,7 @@ void blood(float c, float h, float *p, float *pp)
 		*pp = cs * h*fn / p50 * pow(*p / p50, (fn - 1)) / SQR(1. + pow(*p / p50, fn)) + alphab;
 		return;
 	}
+    printf("bad chigh\n\n");
 	pphigh = pphighfac * h + alphab;
 	*p = phigh + (c - chigh) / pphigh;
 	*pp = pphigh;
