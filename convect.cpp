@@ -29,6 +29,9 @@ void convect(int isp)
 	float fluxsumin, pb, pp;
 	float sumin, sumout, hdsumin, hdsumout;
 
+    printf("\nConvect vals\n");
+    printf("\nin: fluxsumin, sumin, hdsumin, pb, pp\n\n");
+
 	int *isegkk; //added June 2013 to check for errors in segment sequence
 	isegkk = ivector(1, nseg);
 	for (iseg = 1; iseg <= nseg; iseg++) isegkk[iseg] = 0;
@@ -46,6 +49,7 @@ void convect(int isp)
 			if (oxygen[isp] == 1) segc[iseg] = bloodconc(bcp[j][isp] * solutefac[isp], hd[iseg])*qq[iseg] * flowfac;
 			else segc[iseg] = bcp[j][isp] * solutefac[isp] * qq[iseg] * flowfac;
 			isegkk[iseg] = 1;
+            printf("%i: %f, %f, %f, %f, %f\n", inod - 1, segc[iseg], qq[iseg] * flowfac, hd[iseg] * qq[iseg] * flowfac, bcp[j][isp], -1.0f);
 		}
 	}
 	ineg = 0;
@@ -68,7 +72,11 @@ void convect(int isp)
 				fluxsumin += segc[iseg];
 			}
 			//calculate solute level going into node
-			if (oxygen[isp] == 1) blood(fluxsumin / sumin, hdsumin / sumin, &pb, &pp);
+			if (oxygen[isp] == 1)
+            {
+                blood(fluxsumin / sumin, hdsumin / sumin, &pb, &pp);
+                printf("%i: %f, %f, %f, %f, %f\n", inod - 1, fluxsumin, sumin, hdsumin, pb, pp);
+            }
 			else pb = fluxsumin / sumin;
 			//assign solute levels going out of node
 			sumout = 0.;

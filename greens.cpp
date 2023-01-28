@@ -97,8 +97,12 @@ void lubksb(double **a, int n, int *indx, double *b);
 double bicgstab(double **a, double *b, double *x, int n, double eps, int itmax);
 
 void print_vector_isp(float **a, int n, const char *msg, int col);
+void print_vector_double_isp(double **a, int n, const char *msg, int col);
 void print_vector(float *a, int n, const char *msg);
 void print_matrix(float **a, int n, const char *msg);
+void print_matrix_double(double **a, int n, const char *msg);
+float ** copy_float_mat(double **a, int n);
+float * make_float_vec(const double *a, int n);
 
 void greens(void)
 {
@@ -365,6 +369,12 @@ void greens(void)
 						if (linmethod == 1) {
 							for (i = 1; i <= nnv; i++) rhsg[i][1] = rhs[i];
 							rhsg[nnv + 1][1] = -qtsum[isp];
+
+                            // Print matrices
+                            printf("\n\nmatrix vals:\n\n");
+                            print_vector_double_isp(rhsg, nnv + 1, "rhsl", 1);
+                            print_matrix_double(mat, nnv + 1, "mat");
+
 							gaussj(mat, nnv + 1, rhsg, 1);
 							for (i = 1; i <= nnv; i++) {
 								qv[i][isp] = rhsg[i][1];
@@ -388,7 +398,7 @@ void greens(void)
 							rhsl[nnv + 1] = -qtsum[isp];
 							for (i = 1; i <= nnv; i++) matx[i] = qv[i][isp];
 							matx[nnv + 1] = g0[isp];
-							bicgstab(mat, rhsl, matx, nnv + 1, bicgstaberr, bicgstabit);
+							bicgstab(mat, rhsl, matx, nnv + 1, bicgstaberr , bicgstabit);
 							for (i = 1; i <= nnv; i++) {
 								qv[i][isp] = matx[i];
 								qvsum[isp] += qv[i][isp];
@@ -479,16 +489,25 @@ void greens(void)
 				}
 			}
 
-    // print matx, rhsl, al, qvprev, qv, cv, pv, dcdp
-    printf("\nvessel vals\n\n");
+    // print matx, rhsl, al, qvprev, qv, cv, pv, dcdp, g0
+    // Note that the make_float_* functions cause memory leaks,
+    // as currently written.
+    printf("\n\nvessel vals\n\n");
     print_vector_isp(qvprev, nnv, "qvprev", 1);
     print_vector_isp(qv, nnv, "qv", 1);
     print_vector_isp(cv, nnv, "cv", 1);
     print_vector_isp(pv, nnv, "pv", 1);
     print_vector_isp(dcdp, nnv, "dcdp", 1);
-    print_vector(reinterpret_cast<float *>(rhsl), nnv + 1, "rhsl");
+    print_vector_isp(pvt, nnv, "pvt", 1);
+
+//    print_vector_double_isp(rhsg, nnv + 1, "rhsl", 1);
+//    print_matrix_double(mat, nnv + 1, "mat");
+
+    print_matrix(gvv, nnv, "gvv");
     print_matrix(al, nnv, "al");
-    print_matrix(reinterpret_cast<float **>(mat), nnv + 1, "mat");
+
+    printf("diff = %e\n\n", diff[1]);
+    printf("g0 = %e\n\n", g0[1]);
 
 		//********************** end of vessel loop *****************************
 		//********************** start of tissue loop *****************************
@@ -588,7 +607,7 @@ void greens(void)
  * Parameters
  * ----------
  * a : array_like
- *     Pointer to a double array.
+ *     Pointer to a float array.
  * n : int
  *     Integer that gives the size of a.
  * msg : str
@@ -602,13 +621,47 @@ void greens(void)
  */
 void print_vector_isp(float **a, int n, const char *msg, int col)
 {
-    printf("\n%s\n\n", msg);
+    printf("\n%s = jnp.array(\n", msg);
     printf("[");
     for (size_t i = 1; i < n; i++)
     {
         printf("%f, ", a[i][col]);
     }
-    printf("%f]\n\n", a[n][col]);
+    printf("%f]\n", a[n][col]);
+    printf(")\n\n");
+    fflush(stdout);
+}
+
+
+/* Prints an array, interpreted as a vector.
+ *
+ * The printed syntax should closely mimic that of a numpy array.
+ *
+ * Parameters
+ * ----------
+ * a : array_like
+ *     Pointer to a double array.
+ * n : int
+ *     Integer that gives the size of a.
+ * msg : str
+ *     Message to display before printing vector.
+ * col : int
+ *     Column (isp) index.
+ *
+ * Returns
+ * -------
+ * None
+ */
+void print_vector_double_isp(double **a, int n, const char *msg, int col)
+{
+    printf("\n%s = jnp.array(\n", msg);
+    printf("[");
+    for (size_t i = 1; i < n; i++)
+    {
+        printf("%f, ", a[i][col]);
+    }
+    printf("%f]\n", a[n][col]);
+    printf(")\n\n");
     fflush(stdout);
 }
 
@@ -632,13 +685,14 @@ void print_vector_isp(float **a, int n, const char *msg, int col)
  */
 void print_vector(float *a, int n, const char *msg)
 {
-    printf("\n%s\n\n", msg);
+    printf("\n%s = jnp.array(\n", msg);
     printf("[");
     for (size_t i = 1; i < n; i++)
     {
         printf("%f, ", a[i]);
     }
-    printf("%f]\n\n", a[n]);
+    printf("%f]\n", a[n]);
+    printf(")\n\n");
     fflush(stdout);
 }
 
@@ -662,8 +716,8 @@ void print_vector(float *a, int n, const char *msg)
  */
 void print_matrix(float **a, int n, const char *msg)
 {
-    printf("\n%s\n\n", msg);
-    for (size_t i = 1; i < n; i++)
+    printf("\n%s = jnp.array(\n", msg);
+    for (size_t i = 1; i <= n; i++)
     {
         if (i == 1)
         {
@@ -674,18 +728,126 @@ void print_matrix(float **a, int n, const char *msg)
             printf(" [");
         }
 
-        for (size_t j = 1; j < n; j++)
+        for (size_t j = 1; j <= n; j++)
         {
-            if (j != n - 1)
+            if (j != n)
             {
                 printf("%f, ", a[i][j]);
             }
+            else if (i != n)
+            {
+                printf("%f],\n", a[i][j]);
+            }
             else
             {
-                printf("%f]\n", a[i][j]);
+              printf("%f]]\n", a[i][j]);
             }
         }
     }
-    printf("]\n\n");
+    printf(")\n\n");
     fflush(stdout);
+}
+
+
+/* Prints an array, interpreted as a square matrix.
+ *
+ * The printed syntax should closely mimic that of a numpy array.
+ *
+ * Parameters
+ * ----------
+ * a : array_like
+ *     Pointer to a double array.
+ * n : int
+ *     Integer that gives the size of a.
+ * msg : str
+ *     Message to display before printing vector.
+ *
+ * Returns
+ * -------
+ * None
+ */
+void print_matrix_double(double **a, int n, const char *msg)
+{
+    printf("\n%s = jnp.array(\n", msg);
+    for (size_t i = 1; i <= n; i++)
+    {
+        if (i == 1)
+        {
+            printf("[[");
+        }
+        else
+        {
+            printf(" [");
+        }
+
+        for (size_t j = 1; j <= n; j++)
+        {
+            if (j != n)
+            {
+                printf("%f, ", a[i][j]);
+            }
+            else if (i != n)
+            {
+                printf("%f],\n", a[i][j]);
+            }
+            else
+            {
+                printf("%f]]\n", a[i][j]);
+            }
+        }
+    }
+    printf(")\n\n");
+    fflush(stdout);
+}
+
+
+/*
+ * We convert a double matrix to a float matrix.
+ *
+ * Parameters
+ * ----------
+ * a :
+ *     Matrix to make float
+ * n :
+ *     Number of rows (= columns) in matrix a.
+ *
+ * Returns
+ * -------
+ * Converted a to float.
+ */
+float ** copy_float_mat(double **a, int n)
+{
+    float **res = matrix(1, n, 1, n);
+    for (size_t i = 1; i <= n; i++)
+    {
+        for (size_t j = 1; j <= n; j++)
+        {
+            res[i][j] = (float) a[i][j];
+        }
+    }
+    return res;
+}
+
+/*
+ * We convert a double vector to a float vector.
+ *
+ * Parameters
+ * ----------
+ * a :
+ *     Matrix to make float
+ * n :
+ *     Number of rows (= columns) in matrix a.
+ *
+ * Returns
+ * -------
+ * Converted a to float.
+ */
+float * make_float_vec(const double *a, int n)
+{
+    auto *res = (float *) malloc(sizeof(float) * (size_t) (n + 1));
+    for (size_t i = 1; i <= n; i++)
+    {
+        res[i]= (float) a[i];
+    }
+    return res;
 }
